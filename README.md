@@ -6,7 +6,7 @@ It calls the Calichef API on your behalf and reads the recipe search index the a
 
 ## How sign-in works
 
-1. In Claude you add `https://<this-server>/mcp` as a custom connector.
+1. In Claude you add `https://calichef-mcp.vercel.app/mcp` as a custom connector.
 2. Claude registers itself (OAuth Dynamic Client Registration) and opens this server's sign-in page.
 3. You sign in with your Calichef email and password. The server keeps the resulting Calichef session encrypted and gives Claude its own tokens.
 4. Access tokens last an hour and refresh tokens rotate on every use. When the Calichef session ends (30 days), Claude asks you to sign in again.
@@ -34,8 +34,8 @@ The connector shows the Calichef chef hat: it is served at `/favicon.ico`, `/ico
 
 | Name | Purpose |
 | --- | --- |
-| `BASE_URL` | Public URL of this server, no trailing slash |
-| `APP_URL` | URL of the Calichef app |
+| `BASE_URL` | Public URL of this server, without `/mcp` and no trailing slash: `https://calichef-mcp.vercel.app` |
+| `APP_URL` | URL of the Calichef app: `https://calichef.netlify.app` |
 | `MONGODB_URI` | MongoDB for OAuth clients and tokens. The app's cluster works |
 | `MCP_DB` | Database name, default `calichef-mcp` |
 | `MCP_SECRET` | 32+ random characters, encrypts stored sessions. `openssl rand -base64 48` |
@@ -56,10 +56,10 @@ npm run dev            # http://localhost:8787/mcp
 
 ## Deploy on Vercel
 
-1. Deploy Calichef first, so `/data/recipe-index.json` exists in production.
+1. Deploy Calichef first, so `https://calichef.netlify.app/data/recipe-index.json` exists.
 2. Create a Vercel project from this folder and set the variables above (mark `MONGODB_URI` and `MCP_SECRET` as Sensitive).
-3. Set `BASE_URL` to the project's production URL and redeploy.
-4. In Claude: Settings, Connectors, Add custom connector, paste `https://<your-project>.vercel.app/mcp`, then Connect and sign in.
+3. Set `BASE_URL` to `https://calichef-mcp.vercel.app` (the server root, without `/mcp`) and redeploy.
+4. In Claude: Settings, Connectors, Add custom connector, paste `https://calichef-mcp.vercel.app/mcp` (here it does end in `/mcp`), then Connect and sign in.
 
 ## Tools
 
