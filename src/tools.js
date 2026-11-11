@@ -1,10 +1,13 @@
 import { z } from 'zod'
 import { AppError, appClient } from './appApi.js'
 import { TOKEN_LIST, glyphsToTokens, tokensToGlyphs } from './glyphs.js'
+import { iconUrl } from './shared/ingredientIcons.js'
 import {
   DIFFICULTY,
   DIFFICULTY_CODE,
   communityRow,
+  findIcons,
+  ingredientIcons,
   isUserRecipeId,
   minutesOf,
   readableRecipe,
@@ -32,7 +35,8 @@ const ingredientsSchema = z.array(z.object({
   items: z.array(z.object({
     amount: z.string().max(120).optional().describe('Quantity with unit, e.g. "200 g", "2", "1 tbsp"'),
     name: z.string().min(1).max(120).describe('Ingredient, e.g. "flour"'),
-    note: z.string().max(120).optional().describe('Optional detail, e.g. "diced" or "to taste"')
+    note: z.string().max(120).optional().describe('Optional detail, e.g. "diced" or "to taste"'),
+    icon_id: z.string().regex(/^(\d{1,6}|none)$/).optional().describe('Thermomix ingredient icon. Leave it out and the icon is picked from the name automatically; pass an id from search_ingredient_icons to choose another, or "none" for no icon')
   })).min(1).max(60)
 })).max(20)
 
@@ -61,8 +65,14 @@ function fail (error) {
   return { isError: true, content: [{ type: 'text', text: error.message || String(error) }] }
 }
 
-// Tool arguments -> the form body the Calichef API expects.
-function toForm (a, base = {}) {
+// Tool arguments -> the form body the Calichef API expects. pickIcon(name) returns
+// the icon id for an ingredient name (auto-matched in the recipe language).
+function toForm (a, base = {}, pickIcon = () => null) {
+  const imageFor = i => {
+    if (i.icon_id === 'none') return ''
+    const id = i.icon_id || pickIcon(i.name)
+    return id ? iconUrl(id) : ''
+  }
   const pick = (key, value) => (value === undefined ? base[key] : value)
   return {
     ...base,
@@ -81,7 +91,7 @@ function toForm (a, base = {}) {
       ? base.ingredients
       : a.ingredients.map(g => ({
         group: g.group || '',
-        items: g.items.map(i => ({ amount: i.amount || '', name: i.name, description: i.note || '' }))
+        items: g.items.map(i => ({ amount: i.amount || '', name: i.name, description: i.note || '', image: imageFor(i) }))
       })),
     steps: a.steps === undefined ? base.steps : a.steps.map(tokensToGlyphs),
     tips: a.tips === undefined ? base.tips : a.tips.map(tokensToGlyphs)
@@ -114,6 +124,13 @@ export function registerTools (server, auth) {
     ])
     const mine = new Map(community.map(r => [r.id, communityRow(r)]))
     return ids.map(id => byId.get(id) || mine.get(id) || null)
+  }
+
+  // Auto-picks ingredient icons in the recipe language, only when ingredients are sent.
+  async function iconPicker (a, lang) {
+    if (!a.ingredients?.length) return undefined
+    const { match } = await ingredientIcons()
+    return name => match(name, lang)
   }
 
   function tool (name, config, handler) {
@@ -194,6 +211,17 @@ export function registerTools (server, auth) {
     }
   })
 
+  tool('search_ingredient_icons', {
+    title: 'Search ingredient icons',
+    description: 'Find Thermomix ingredient icons by name (any language), to choose a different icon_id than the one picked automatically when creating or updating a recipe. Most used icons first.',
+    inputSchema: { query: z.string().min(1).max(120).describe('Ingredient name, e.g. "tomato", "harina", "beurre"') },
+    annotations: READ
+  }, async a => {
+    const { icons } = await ingredientIcons()
+    const results = findIcons(icons, a.query)
+    return results.length ? results : { results: [], note: 'No icon found. Try a simpler or singular name, or another language.' }
+  })
+
   // ---------- My recipes ----------
 
   tool('list_my_recipes', {
@@ -207,7 +235,7 @@ export function registerTools (server, auth) {
 
   tool('create_recipe', {
     title: 'Create recipe',
-    description: `Create a recipe in the user's Calichef account. It is public by default (everyone can see it) unless the user asks for it to be private. Write it in the language the user is using unless they ask otherwise, and set language accordingly. ${STEP_FORMAT} Returns the new recipe's id and link.`,
+    description: `Create a recipe in the user's Calichef account. It is public by default (everyone can see it) unless the user asks for it to be private. Write it in the language the user is using unless they ask otherwise, and set language accordingly. Ingredient icons are picked from each ingredient name automatically. ${STEP_FORMAT} Returns the new recipe's id and link.`,
     inputSchema: {
       title: z.string().min(1).max(150),
       ...recipeFields,
@@ -223,7 +251,7 @@ export function registerTools (server, auth) {
     const lang = a.language || (await me()).languagePreferences?.find(l => ['EN', 'ES', 'FR'].includes(l)) || 'EN'
     const body = toForm({ ...a, language: lang, public: a.public ?? true }, {
       ingredients: [], steps: [], tips: [], tm_versions: [], basedOn
-    })
+    }, await iconPicker(a, lang))
     const { recipe } = await api.call('/api/recipes', { method: 'POST', body })
     return { created: true, id: recipe.id, title: recipe.title, public: recipe.isPublic, url: recipeUrl(recipe.id) }
   })
@@ -240,7 +268,8 @@ export function registerTools (server, auth) {
   }, async a => {
     const current = await loadRecipe(a.id)
     if (!current.form) throw new AppError('Only the author can change this recipe.')
-    const { recipe } = await api.call(`/api/recipes/${a.id}`, { method: 'PUT', body: toForm(a, current.form) })
+    const lang = a.language || current.form.language
+    const { recipe } = await api.call(`/api/recipes/${a.id}`, { method: 'PUT', body: toForm(a, current.form, await iconPicker(a, lang)) })
     return { updated: true, id: recipe.id, title: recipe.title, public: recipe.isPublic, url: recipeUrl(recipe.id) }
   })
 

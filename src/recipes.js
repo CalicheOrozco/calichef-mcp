@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { fetchPublic } from './appApi.js'
 import { config } from './config.js'
 import { glyphsToTokens } from './glyphs.js'
+import { createIconMatcher, iconIdOf, ingredientKey } from './shared/ingredientIcons.js'
 
 const INDEX_TTL = 60 * 60 * 1000
 const MAX_SHARDS_CACHED = 12
@@ -63,6 +64,39 @@ export async function thermomixRecipe (id) {
     shardCache.set(name, promise)
   }
   return (await shardCache.get(name))[id] || null
+}
+
+// ---------- Ingredient icons ----------
+
+let iconCache = null
+
+// Catalog of the Thermomix ingredient icons (about 280 KB), refreshed hourly.
+export async function ingredientIcons () {
+  if (iconCache && Date.now() - iconCache.loadedAt < INDEX_TTL) return iconCache.promise
+  const promise = fetchPublic('/data/ingredient-icons.json').then(catalog => ({
+    icons: catalog.icons,
+    match: createIconMatcher(catalog)
+  }))
+  iconCache = { loadedAt: Date.now(), promise }
+  promise.catch(() => { iconCache = null })
+  return promise
+}
+
+// Icons whose names contain every word of the query, most used first.
+export function findIcons (icons, query, limit = 10) {
+  const words = ingredientKey(query).split(' ').filter(Boolean)
+  if (!words.length) return []
+  return icons
+    .filter(icon => Object.values(icon.names).flat().some(name => {
+      const key = ingredientKey(name)
+      return words.every(w => key.includes(w))
+    }))
+    .slice(0, limit)
+    .map(icon => ({
+      icon_id: icon.id,
+      used_for: Object.fromEntries(Object.entries(icon.names).map(([lang, names]) => [lang, names.slice(0, 3)])),
+      image: `https://assets.tmecosys.com/image/upload/t_web_ingredient_48x48/icons/ingredient_icons/${icon.id}`
+    }))
 }
 
 // ---------- Community recipes (from the API, as the signed-in user) ----------
@@ -167,7 +201,8 @@ export function readableRecipe (r) {
       items: (items || []).map(i => ({
         amount: i.amount || undefined,
         name: i.name,
-        note: i.description || undefined
+        note: i.description || undefined,
+        icon_id: i.icon || iconIdOf(i.image) || undefined
       }))
     })),
     steps: (r.steps || []).map(glyphsToTokens),

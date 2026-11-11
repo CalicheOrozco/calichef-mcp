@@ -26,6 +26,10 @@ The Thermomix recipes are about 160 MB of JSON, too much to download on every ca
 
 Steps in Calichef use characters of the Vorwerk icon font for reverse, spoon speed, dough and the TM6 / TM7 modes. Claude reads and writes them as tokens such as `[reverse]`, `[spoon]` or `[high-temp]`, and this server converts them both ways (`src/glyphs.js`).
 
+## Ingredient icons
+
+Calichef's build also writes `/data/ingredient-icons.json`: the 823 Thermomix ingredient icons with the names each one is used for in English, Spanish and French. When Claude creates or updates a recipe, every ingredient gets its icon from its name automatically (`src/shared/ingredientIcons.js`, a copy of the app's `utils/ingredientIcons.js`, which is right about 98% of the time on the Thermomix data). Claude can pick another one with `search_ingredient_icons` and `icon_id`, or none with `"none"`.
+
 ## Icon
 
 The connector shows the Calichef chef hat: it is served at `/favicon.ico`, `/icon.jpg` and `/icon-512.jpg`, and listed in the MCP server info (`icons`).
@@ -65,7 +69,7 @@ npm run dev            # http://localhost:8787/mcp
 
 | Area | Tools |
 | --- | --- |
-| Recipes | `search_recipes`, `get_recipe` |
+| Recipes | `search_recipes`, `get_recipe`, `search_ingredient_icons` |
 | My recipes | `list_my_recipes`, `create_recipe`, `update_recipe`, `delete_recipe` |
 | Favorites | `list_favorites`, `add_favorite`, `remove_favorite` |
 | Shopping list | `get_shopping_list`, `add_to_shopping_list`, `remove_from_shopping_list` |

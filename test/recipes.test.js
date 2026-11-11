@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { glyphsToTokens, tokensToGlyphs, SYMBOLS } from '../src/glyphs.js'
 import { normalize, searchRows, shardOf, summary } from '../src/recipes.js'
 import { _internal } from '../src/tools.js'
+import { createIconMatcher } from '../src/shared/ingredientIcons.js'
 
 process.env.APP_URL ||= 'https://calichef.example'
 
@@ -39,12 +40,20 @@ test('tool arguments become the form the Calichef API expects', () => {
     title: 'Sopa',
     difficulty: 'easy',
     public: false,
-    ingredients: [{ items: [{ amount: '1', name: 'cebolla', note: 'en cuartos' }] }],
+    ingredients: [{ items: [{ amount: '1', name: 'cebolla', note: 'en cuartos' }, { name: 'sal', icon_id: 'none' }, { name: 'algo', icon_id: '24' }] }],
     steps: ['Pique 5 seg/vel 5.', 'Sofría 5 min/120°C/[reverse]/vel [spoon].']
-  }, { ingredients: [], steps: [], tips: [], tm_versions: [] })
+  }, { ingredients: [], steps: [], tips: [], tm_versions: [] }, name => (name === 'cebolla' ? '18' : null))
   assert.equal(form.difficulty, 'E')
   assert.equal(form.isPublic, false)
-  assert.deepEqual(form.ingredients, [{ group: '', items: [{ amount: '1', name: 'cebolla', description: 'en cuartos' }] }])
+  const icon = id => `https://assets.tmecosys.com/image/upload/t_web_ingredient_48x48/icons/ingredient_icons/${id}`
+  assert.deepEqual(form.ingredients, [{
+    group: '',
+    items: [
+      { amount: '1', name: 'cebolla', description: 'en cuartos', image: icon(18) },
+      { amount: '', name: 'sal', description: '', image: '' },
+      { amount: '', name: 'algo', description: '', image: icon(24) }
+    ]
+  }])
   assert.equal(form.steps[1], 'Sofría 5 min/120°C//vel .')
   assert.deepEqual(form.tips, [])
 
@@ -53,4 +62,20 @@ test('tool arguments become the form the Calichef API expects', () => {
   assert.equal(updated.title, 'Sopa nueva')
   assert.deepEqual(updated.steps, form.steps)
   assert.equal(updated.isPublic, false)
+})
+
+test('ingredient names find their Thermomix icon', () => {
+  const match = createIconMatcher({
+    icons: [
+      { id: '40', uses: 900, names: { ES: ['de harina de trigo', 'de harina'], EN: ['plain flour'] } },
+      { id: '506', uses: 300, names: { ES: ['de pechuga de pollo'] } },
+      { id: '7', uses: 800, names: { ES: ['de pollo'] } },
+      { id: '548', uses: 50, names: { ES: ['chiles jalapeños'] } }
+    ]
+  })
+  assert.equal(match('Harina', 'ES'), '40')
+  assert.equal(match('plain flour', 'EN'), '40')
+  assert.equal(match('pechuga de pollo deshuesada', 'ES'), '506')
+  assert.equal(match('jalapeño', 'ES'), '548')
+  assert.equal(match('xyz', 'ES'), null)
 })
