@@ -9,14 +9,25 @@ import { handleLogin, provider } from './oauth.js'
 import { limit } from './rateLimit.js'
 import { registerTools } from './tools.js'
 
-// Calichef icon, served here so Claude can show it next to the connector.
-// Read at startup (bundled with the function), not from a static folder.
+// Calichef icon. On Vercel the public folder is served as static files before
+// this app runs; these routes cover local runs. Files are read on demand so a
+// bundle without them can never crash the server at startup.
 const ASSETS = {
   '/favicon.ico': { type: 'image/x-icon', file: '../public/favicon.ico' },
   '/icon.jpg': { type: 'image/jpeg', file: '../public/icon.jpg' },
   '/icon-512.jpg': { type: 'image/jpeg', file: '../public/icon-512.jpg' }
 }
-const assetData = Object.fromEntries(Object.entries(ASSETS).map(([path, { file }]) => [path, readFileSync(new URL(file, import.meta.url))]))
+const assetCache = new Map()
+function readAsset (path) {
+  if (!assetCache.has(path)) {
+    try {
+      assetCache.set(path, readFileSync(new URL(ASSETS[path].file, import.meta.url)))
+    } catch {
+      assetCache.set(path, null)
+    }
+  }
+  return assetCache.get(path)
+}
 
 const app = express()
 app.disable('x-powered-by')
@@ -25,7 +36,9 @@ app.set('trust proxy', 1)
 
 for (const [path, { type }] of Object.entries(ASSETS)) {
   app.get(path, (req, res) => {
-    res.set('Cache-Control', 'public, max-age=86400').type(type).send(assetData[path])
+    const data = readAsset(path)
+    if (!data) return res.status(404).end()
+    res.set('Cache-Control', 'public, max-age=86400').type(type).send(data)
   })
 }
 
